@@ -42,7 +42,11 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 CAPSTONE_CONFIG = {
     "endpoint": "https://swedencentral.api.cognitive.microsoft.com",
-    "api_version": "2024-10-21",
+    # Must be 2025-03-01-preview or newer — the gpt-4o-mini-transcribe
+    # audio endpoint is not supported on older API versions and Azure will
+    # silently route audio requests as chat completions, returning a
+    # confusing "unsupported_format" error on the messages param.
+    "api_version": "2025-03-01-preview",
     # Text reasoning: gpt-4.1-mini, 10 req/min, 10k tokens/min
     "chat_deployment": "gpt-4-1-mini-qc",
     # Speech-to-text: gpt-4o-mini-transcribe, 6000 req/min, 60k tokens/min

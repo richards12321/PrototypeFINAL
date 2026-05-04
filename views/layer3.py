@@ -175,15 +175,16 @@ def _render_question(comp: dict, phase: str, question_text: str) -> None:
                         st.rerun()
                     except Exception as e:
                         # Surface enough detail to debug Azure config without
-                        # spilling secrets. Most common failure now would be a
-                        # 401 (bad API key) or a 429 (rate limit on
-                        # capstone-transcribe, though that limit is high).
+                        # spilling secrets. Common failure modes:
+                        # - 401: bad/expired AZURE_OPENAI_API_KEY in secrets
+                        # - 404 DeploymentNotFound: capstone-transcribe missing
+                        # - 400 unsupported_format: API version too old (need
+                        #   2025-03-01-preview or newer for gpt-4o-mini-transcribe)
                         st.error(
                             f"Transcription failed: {type(e).__name__} — {e}\n\n"
-                            "If this is a 401 error, check that "
-                            "`AZURE_OPENAI_API_KEY` in your Streamlit secrets "
-                            "is correct and not expired. You can also type your "
-                            "answer below as a fallback."
+                            "Type your answer below as a fallback. "
+                            "If this keeps happening, check the Streamlit logs "
+                            "for the underlying Azure error."
                         )
 
         with st.expander("Or type your answer instead"):

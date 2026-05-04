@@ -179,3 +179,7 @@ def _render_candidate_view(scores: dict) -> None:
         "Your results have been recorded. A member of the recruitment team will "
         "be in touch with next steps."
     )
+
+    st.success(
+        "**The assessment is complete. You can close this page now.**"
+    )
