@@ -28,11 +28,11 @@ from database import db
 
 from .state import advance_stage
 
-try:
-    from streamlit_mic_recorder import mic_recorder
-    MIC_AVAILABLE = True
-except ImportError:
-    MIC_AVAILABLE = False
+# st.audio_input is built into Streamlit and records at 16kHz mono by default,
+# which is exactly what gpt-4o-mini-transcribe expects. The older
+# streamlit-mic-recorder component was producing 44.1/48kHz audio that Azure
+# was rejecting (returning a confusingly-shaped error referencing 'messages').
+MIC_AVAILABLE = hasattr(st, "audio_input")
 
 
 def render() -> None:
@@ -156,36 +156,57 @@ def _render_question(comp: dict, phase: str, question_text: str) -> None:
     if not st.session_state.get(transcript_shown_key):
         if MIC_AVAILABLE:
             st.markdown("**Record your answer** (up to 2 minutes):")
-            audio = mic_recorder(
-                start_prompt="🎙️ Start recording",
-                stop_prompt="⏹️ Stop recording",
-                just_once=False,
-                use_container_width=True,
-                key=f"mic_{comp_idx}_{phase}",
-            )
-            if audio and audio.get("bytes"):
-                st.session_state[audio_bytes_key] = audio["bytes"]
-                with st.spinner("Transcribing..."):
-                    try:
-                        transcript = transcribe_audio(audio["bytes"])
-                        if not transcript:
-                            raise ValueError("Empty transcript")
-                        st.session_state[transcript_key] = transcript
-                        st.session_state[transcript_shown_key] = True
-                        st.rerun()
-                    except Exception as e:
-                        # Surface enough detail to debug Azure config without
-                        # spilling secrets. Common failure modes:
-                        # - 401: bad/expired AZURE_OPENAI_API_KEY in secrets
-                        # - 404 DeploymentNotFound: capstone-transcribe missing
-                        # - 400 unsupported_format: API version too old (need
-                        #   2025-03-01-preview or newer for gpt-4o-mini-transcribe)
-                        st.error(
-                            f"Transcription failed: {type(e).__name__} — {e}\n\n"
-                            "Type your answer below as a fallback. "
-                            "If this keeps happening, check the Streamlit logs "
-                            "for the underlying Azure error."
-                        )
+            # Pass sample_rate=16000 if this Streamlit version supports it
+            # (added in mid-2025). Falls back gracefully on older versions —
+            # those defaulted to a higher rate which Azure may still accept.
+            audio_input_kwargs = {
+                "key": f"mic_{comp_idx}_{phase}",
+                "label_visibility": "collapsed",
+            }
+            try:
+                audio_file = st.audio_input(
+                    "Click the microphone to start, click again to stop.",
+                    sample_rate=16000,
+                    **audio_input_kwargs,
+                )
+            except TypeError:
+                # Older Streamlit without sample_rate support.
+                audio_file = st.audio_input(
+                    "Click the microphone to start, click again to stop.",
+                    **audio_input_kwargs,
+                )
+            # st.audio_input keeps returning the same UploadedFile on every
+            # rerun, so we track which recordings we've already transcribed
+            # by (file_id, size) to avoid re-transcribing on every rerun.
+            already_done_key = f"l3_transcribed_id_{comp_idx}_{phase}"
+            if audio_file is not None:
+                # Read once. The size is stable; use it as part of the dedup key.
+                audio_bytes = audio_file.getvalue()
+                fingerprint = (audio_file.file_id, len(audio_bytes)) if hasattr(audio_file, "file_id") else (id(audio_file), len(audio_bytes))
+                if st.session_state.get(already_done_key) != fingerprint:
+                    st.session_state[already_done_key] = fingerprint
+                    st.session_state[audio_bytes_key] = audio_bytes
+                    with st.spinner("Transcribing..."):
+                        try:
+                            transcript = transcribe_audio(audio_bytes, filename="recording.wav")
+                            if not transcript:
+                                raise ValueError("Empty transcript — recording may have been silent.")
+                            st.session_state[transcript_key] = transcript
+                            st.session_state[transcript_shown_key] = True
+                            st.rerun()
+                        except Exception as e:
+                            # Surface enough detail to debug Azure config without
+                            # spilling secrets. Common failure modes:
+                            # - 401: bad/expired AZURE_OPENAI_API_KEY in secrets
+                            # - 404 DeploymentNotFound: capstone-transcribe missing
+                            # - 400 unsupported_format: API version too old or
+                            #   audio sample rate not 16kHz mono
+                            st.error(
+                                f"Transcription failed: {type(e).__name__} — {e}\n\n"
+                                "Type your answer below as a fallback. "
+                                "If this keeps happening, check the Streamlit logs "
+                                "for the underlying Azure error."
+                            )
 
         with st.expander("Or type your answer instead"):
             typed = st.text_area(

@@ -40,8 +40,6 @@ def speak(text: str, *, autoplay: bool = True, voice_hint: str = "en") -> None:
         voice_hint: Language hint passed to SpeechSynthesisUtterance. Use
             "en" or "en-US" for English voices.
     """
-    # JSON-encode the text so it's safe to embed inside a JS string literal,
-    # regardless of quotes, backticks, newlines, or unicode.
     safe_text = json.dumps(text)
     safe_lang = json.dumps(voice_hint)
     uid = uuid.uuid4().hex[:8]
@@ -74,6 +72,12 @@ def speak(text: str, *, autoplay: bool = True, voice_hint: str = "en") -> None:
         const btn = document.getElementById("replay_{uid}");
         const statusEl = document.getElementById("status_{uid}");
 
+        // Guard flags. autoplayDone prevents the autoplay path from firing
+        // twice when both voiceschanged AND the timeout fallback resolve.
+        // userTriggered isn't gated — clicking the replay button always
+        // restarts speech.
+        let autoplayDone = false;
+
         function setStatus(msg) {{
           if (statusEl) statusEl.textContent = msg;
         }}
@@ -81,7 +85,6 @@ def speak(text: str, *, autoplay: bool = True, voice_hint: str = "en") -> None:
         function pickVoice() {{
           const voices = window.speechSynthesis.getVoices();
           if (!voices || voices.length === 0) return null;
-          // Prefer high-quality English voices when available.
           const preferred = [
             "Google US English",
             "Microsoft Aria Online (Natural) - English (United States)",
@@ -95,11 +98,14 @@ def speak(text: str, *, autoplay: bool = True, voice_hint: str = "en") -> None:
           return voices.find(v => v.lang && v.lang.startsWith(lang)) || voices[0];
         }}
 
-        function speakNow() {{
+        function doSpeak() {{
           if (!("speechSynthesis" in window)) {{
             setStatus("Voice playback not supported in this browser.");
             return;
           }}
+          // Cancel any in-flight speech (e.g. from a stale component on
+          // the previous Streamlit rerun). This is the line that ensures
+          // we never have two voices talking over each other.
           window.speechSynthesis.cancel();
           const utter = new SpeechSynthesisUtterance(text);
           const voice = pickVoice();
@@ -113,25 +119,40 @@ def speak(text: str, *, autoplay: bool = True, voice_hint: str = "en") -> None:
           window.speechSynthesis.speak(utter);
         }}
 
-        // Wire the button to speakNow. Because the script runs inside a
-        // Streamlit component iframe, the button and script are guaranteed
-        // to be in the same document, so getElementById finds it.
+        function tryAutoplay() {{
+          // Only autoplay once per component instance. Without this guard,
+          // the question would start playing, get cancelled, then restart
+          // — exactly the "cut off and re-asked" bug.
+          if (autoplayDone) return;
+          autoplayDone = true;
+          doSpeak();
+        }}
+
+        // The replay button always speaks, regardless of autoplay state.
         if (btn) {{
-          btn.addEventListener("click", speakNow);
+          btn.addEventListener("click", function() {{
+            doSpeak();
+          }});
         }}
 
-        function maybeAutoplay() {{
-          if (shouldAutoplay) speakNow();
-        }}
+        if (!shouldAutoplay) return;
 
-        // Voices load asynchronously in some browsers. If they're not ready,
-        // wait for the voiceschanged event before speaking.
+        // Voices may load asynchronously. We try whichever fires first:
+        // either the voiceschanged event OR a short timeout. Both call
+        // tryAutoplay() but the autoplayDone guard ensures only one wins.
         if (window.speechSynthesis.getVoices().length === 0) {{
-          window.speechSynthesis.addEventListener("voiceschanged", maybeAutoplay, {{ once: true }});
-          // Some browsers never fire voiceschanged; fall back after 500ms.
-          setTimeout(maybeAutoplay, 500);
+          window.speechSynthesis.addEventListener(
+            "voiceschanged",
+            tryAutoplay,
+            {{ once: true }}
+          );
+          setTimeout(tryAutoplay, 500);
         }} else {{
-          maybeAutoplay();
+          // Tiny delay before speaking. This gives any in-flight speech
+          // from the *previous* question (which may still be queued if
+          // the candidate clicked Continue mid-sentence) a moment to be
+          // properly cancelled before we start the new one.
+          setTimeout(tryAutoplay, 100);
         }}
       }})();
     </script>

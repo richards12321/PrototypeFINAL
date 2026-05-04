@@ -215,23 +215,59 @@ def transcribe_audio(audio_bytes: bytes, filename: str = "recording.wav") -> str
 
     Rate limits on this deployment are generous (6000 req/min) so we don't
     throttle locally.
+
+    Defensive checks: refuse to send empty or impossibly-short audio, and
+    surface the actual deployment + API version in errors so misconfiguration
+    is debuggable.
     """
+    if not audio_bytes:
+        raise ValueError("No audio data to transcribe (received 0 bytes).")
+    if len(audio_bytes) < 1000:
+        # ~1KB is shorter than any realistic recording; usually means the mic
+        # never opened or the user clicked stop instantly. Don't waste an
+        # Azure call on it.
+        raise ValueError(
+            f"Audio recording is too short to transcribe "
+            f"({len(audio_bytes)} bytes). Please re-record."
+        )
+
     client = get_client()
     deployment = CAPSTONE_CONFIG["transcribe_deployment"]
+    api_version = CAPSTONE_CONFIG["api_version"]
 
     import io
     bio = io.BytesIO(audio_bytes)
     bio.name = filename
 
     t0 = time.time()
-    resp = client.audio.transcriptions.create(
-        model=deployment,
-        file=bio,
-    )
+    try:
+        resp = client.audio.transcriptions.create(
+            model=deployment,
+            file=bio,
+        )
+    except OpenAIError as e:
+        # Log the full context so we can diagnose 400 / 404 / 401 errors that
+        # come back from Azure with confusing param names. The most common
+        # cause of an "unsupported_format" with param=messages is that Azure
+        # routed the request to chat completions because the deployment doesn't
+        # exist or the API version is wrong.
+        logger.error(
+            json.dumps({
+                "phase": "transcribe",
+                "deployment": deployment,
+                "api_version": api_version,
+                "audio_bytes": len(audio_bytes),
+                "error": str(e),
+                "error_type": type(e).__name__,
+            })
+        )
+        raise
+
     elapsed = time.time() - t0
     logger.info(
         json.dumps({
             "deployment": deployment,
+            "api_version": api_version,
             "elapsed_s": round(elapsed, 3),
             "audio_bytes": len(audio_bytes),
             "transcript_len": len(resp.text or ""),
