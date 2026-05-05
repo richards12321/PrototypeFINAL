@@ -40,18 +40,18 @@ THEMES: List[str] = ["logical", "numerical", "verbal"]
 # QUESTIONS_PER_THEME questions, distributing them across pools as evenly
 # as possible (any remainder goes to the first pool in the list).
 THEME_POOLS: Dict[str, List[str]] = {
-    "logical":   ["logical", "abstract_aa", "abstract_ab"],
+    "logical":   ["abstract_aa", "abstract_ab"],
     "numerical": ["numerical_na", "numerical_nb"],
-    "verbal":    ["verbal_easy", "verbal_difficult"],
+    "verbal":    ["verbal_difficult"],
 }
 
 QUESTIONS_PER_THEME = 10
 
 # Per-theme time limits in seconds.
 TIME_LIMITS: Dict[str, int] = {
-    "logical":   60,
+    "logical":   75,
     "numerical": 90,
-    "verbal":    90,
+    "verbal":    60,
 }
 
 

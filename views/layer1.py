@@ -36,6 +36,11 @@ def render() -> None:
         _finish_layer(candidate_id)
         return
 
+    # One-time Layer 1 overview, shown before the first theme intro.
+    if theme_idx == 0 and not st.session_state.get("l1_overview_seen", False):
+        _layer_overview()
+        return
+
     theme = THEMES[theme_idx]
 
     # Theme intro screen (only before the first question of a theme)
@@ -57,46 +62,121 @@ def render() -> None:
     _render_question(candidate_id, theme, theme_idx, question_idx, question, len(questions))
 
 
+def _layer_overview() -> None:
+    """Layer 1 overview shown once before the first theme intro."""
+    st.title("Layer 1 — Cognitive Assessment")
+    st.markdown(
+        f"""
+        Layer 1 has three themes you'll work through in order:
+
+        1. **Logical Reasoning** — abstract matrix puzzles. You'll see a 3×3
+           grid of figures with one cell missing, and pick the figure that
+           completes the pattern.
+        2. **Numerical Reasoning** — short charts and tables, followed by a
+           multiple-choice question about the data.
+        3. **Verbal Reasoning** — a short passage followed by a statement.
+           You decide whether the statement is **True**, **False**, or
+           **Cannot Say** based only on the passage.
+
+        Each theme has **{QUESTIONS_PER_THEME} questions** with its own
+        per-question time limit. If time expires on a question, it's marked
+        incorrect and you move on automatically. You cannot revisit
+        questions once answered.
+
+        ### Before you begin — please make sure you have:
+        - 📝 **Pen and paper** for working through problems
+        - 🧮 **A calculator** (the numerical theme requires arithmetic on
+          percentages, ratios, and multi-step figures)
+        - 🪑 A quiet, uninterrupted environment for the next ~30 minutes
+
+        Pick the best answer; you will not see whether you got each
+        question right.
+        """
+    )
+    if st.button("Continue to Logical Reasoning", type="primary"):
+        st.session_state.l1_overview_seen = True
+        st.rerun()
+
+
 def _theme_intro(theme: str, theme_idx: int) -> None:
     st.title(f"Layer 1 — {theme.capitalize()} Reasoning")
     st.caption(f"Theme {theme_idx + 1} of {len(THEMES)}")
 
     seconds = time_limit_for(theme)
 
-    if theme_idx == 0:
+    if theme == "logical":
         st.markdown(
             f"""
-            Layer 1 tests your reasoning across three themes: logical,
-            numerical, and verbal. You'll see **{QUESTIONS_PER_THEME} questions
-            per theme** ({QUESTIONS_PER_THEME * len(THEMES)} total).
+            ### Matrix reasoning
 
-            **Each question has a per-theme time limit.** If time expires, the
-            question is marked incorrect and you move on automatically.
-            Unanswered questions cannot be revisited.
+            Each question shows a **3×3 grid of figures** with the
+            bottom-right cell missing. The figures change across rows and
+            columns according to a pattern — your job is to work out the
+            pattern and pick the option (A–E) that completes the grid.
 
-            ### Before you begin — please make sure you have:
-            - 📝 **Pen and paper** for working through problems
-            - 🧮 **A calculator** (the numerical theme requires arithmetic on
-              percentages, ratios, and multi-step figures)
-            - 🪑 A quiet, uninterrupted environment for the next ~30 minutes
+            ### How the patterns work
 
-            The logical block mixes verbal-logic prompts with abstract
-            figural-reasoning items (pick the next figure in a sequence).
-            The numerical block uses charts and tables to test data
-            interpretation. The verbal block presents short passages followed
-            by a statement — your job is to decide whether the statement is
-            **True**, **False**, or **Cannot Say** based only on the passage.
+            Patterns can involve any combination of:
+            - **Shape changes** — squares to triangles, open to filled
+            - **Rotation** — figures turning 45° or 90° each step
+            - **Addition or subtraction** — elements appearing or
+              disappearing across rows or columns
+            - **Counting** — number of dots, lines, or shapes increasing
+              or decreasing
+            - **Color or shading** — alternating, inverting, or combining
 
-            Pick the best answer; you will not see whether you got each
-            question right.
+            ### Tips before you start
 
-            **{theme.capitalize()} time limit: {seconds} seconds per question.**
+            - **Look at rows first**, then columns. The pattern often runs
+              in one direction more obviously than the other.
+            - **Eliminate impossible options.** Even if you can't see the
+              full pattern, you can usually rule out 2–3 options quickly.
+            - **Don't overthink it.** If you've stared for 30 seconds and
+              nothing clicks, pick your best guess and move on. Wrong
+              answers cost the same as no answer, but no answer is
+              guaranteed wrong.
+            - **Watch the timer.** {seconds} seconds is enough for most
+              questions if you don't get stuck.
+
+            **Time limit: {seconds} seconds per question.**
             """
         )
-    else:
+    elif theme == "numerical":
         st.markdown(
-            f"Theme {theme_idx} complete. Next up: **{theme.capitalize()} Reasoning** "
-            f"— {QUESTIONS_PER_THEME} questions, **{seconds} seconds each**."
+            f"""
+            ### Numerical reasoning
+
+            Each question shows a **chart or table**, followed by a
+            multiple-choice question about the data. You'll need to do
+            arithmetic on percentages, ratios, growth rates, and similar.
+
+            Use your calculator. Read the question carefully — the wrong
+            answers are usually plausible-looking traps based on
+            misreading axes, units, or which row/column to use.
+
+            **Time limit: {seconds} seconds per question.**
+            """
+        )
+    elif theme == "verbal":
+        st.markdown(
+            f"""
+            ### Verbal reasoning
+
+            Each question shows a **short passage** followed by a
+            **statement**. You'll choose one of three options:
+
+            - **True** — the statement follows logically from the passage.
+            - **False** — the statement contradicts the passage.
+            - **Cannot Say** — the passage doesn't give you enough
+              information to decide either way.
+
+            **Important:** answer based only on what the passage says. Don't
+            use outside knowledge, common sense, or assumptions about what
+            "should" be true. If the passage doesn't address it directly,
+            the answer is almost always **Cannot Say**.
+
+            **Time limit: {seconds} seconds per question.**
+            """
         )
 
     if st.button(f"Begin {theme.capitalize()} Theme", type="primary"):

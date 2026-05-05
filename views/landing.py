@@ -20,22 +20,12 @@ def render() -> None:
 
     st.divider()
 
-    st.markdown("""
-    <style>
-    button[kind="secondary"]:hover {
-        background-color: #ff0000 !important;
-        color: white !important;
-        border-color: #ff4b4b !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
     col1, col2 = st.columns(2)
 
     with col1:
         st.subheader("I'm a Candidate")
         st.write("Start or resume your assessment. Takes roughly 60 minutes end to end.")
-        if st.button("Begin as Candidate", use_container_width=True, key="btn_candidate"):
+        if st.button("Begin as Candidate", type="primary", use_container_width=True, key="btn_candidate"):
             st.session_state.mode = "candidate_form"
             st.rerun()
 

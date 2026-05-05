@@ -23,6 +23,7 @@ from assessment_logic.layer3_logic import (
     score_competency,
 )
 from assessment_logic.llm_client import transcribe_audio
+from assessment_logic.recording_cap import render_recording_cap
 from assessment_logic.tts import speak
 from database import db
 
@@ -73,19 +74,15 @@ def _intro() -> None:
     st.title("Layer 3 — AI-Led Interview")
     st.markdown(
         f"""
-        You'll be asked **{COMPETENCY_COUNT} interview questions**, one for each
-        competency we're assessing. The AI interviewer will read each question
-        out loud, then you'll record a voice answer (up to 2 minutes). The AI
-        will then ask one follow-up based on what you said, and read that out
-        loud too.
-
-        **The five areas:** Proactivity, Learning Mindset, Adaptability,
-        Collaboration, and Self-Reflection.
+        You'll be asked **{COMPETENCY_COUNT} interview questions**. The AI
+        interviewer will read each question out loud, then you'll record a
+        voice answer (up to 1.5 minutes). The AI will then ask one follow-up
+        based on what you said, and read that out loud too.
 
         **How it works:**
         1. Listen as the AI reads the question.
         2. Click **Start recording** and answer out loud.
-        3. Click **Stop** when you're done (or the 2-minute timer will stop you).
+        3. Click **Stop** when you're done (or the 1.5-minute timer will stop you).
         4. Review the transcript, then continue to the AI's follow-up.
 
         If you miss a question you can press **🔊 Replay question** at any
@@ -121,7 +118,7 @@ def _render_question(comp: dict, phase: str, question_text: str) -> None:
 
     col1, col2 = st.columns([3, 1])
     with col1:
-        st.markdown(f"**Layer 3 — Competency {comp_idx + 1} of {COMPETENCY_COUNT}: {comp['competency_name']}**")
+        st.markdown(f"**Layer 3 — Question {comp_idx + 1} of {COMPETENCY_COUNT}**")
         st.progress(
             (exchange_num - 1) / total_exchanges,
             text=f"Exchange {exchange_num} of {total_exchanges}",
@@ -155,7 +152,7 @@ def _render_question(comp: dict, phase: str, question_text: str) -> None:
     # --- Recording UI ---
     if not st.session_state.get(transcript_shown_key):
         if MIC_AVAILABLE:
-            st.markdown("**Record your answer** (up to 2 minutes):")
+            st.markdown("**Record your answer** (up to 1.5 minutes):")
             # Pass sample_rate=16000 if this Streamlit version supports it
             # (added in mid-2025). Falls back gracefully on older versions —
             # those defaulted to a higher rate which Azure may still accept.
@@ -175,6 +172,12 @@ def _render_question(comp: dict, phase: str, question_text: str) -> None:
                     "Click the microphone to start, click again to stop.",
                     **audio_input_kwargs,
                 )
+
+            # Hard-cap the recording at 90 seconds. The cap helper renders a
+            # live countdown and clicks the recorder's stop button when the
+            # cap is reached, which triggers transcription via the same path
+            # as a manual stop.
+            render_recording_cap(max_seconds=90)
             # st.audio_input keeps returning the same UploadedFile on every
             # rerun, so we track which recordings we've already transcribed
             # by (file_id, size) to avoid re-transcribing on every rerun.
